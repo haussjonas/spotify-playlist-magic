@@ -3,47 +3,34 @@ import { Switch, BrowserRouter as Router, Route } from "react-router-dom";
 import queryString from "query-string";
 import * as R from "ramda";
 import { nest } from "d3-collection";
-import fetch from "./lib/fetch";
 import "./App.css";
 
+import fetchSpotify, { setAuthorization } from "./lib/api/spotify";
+
 class App extends Component {
-  getTracks({ userId, playlistId, access_token }) {
-    return fetch(
-      `https://api.spotify.com/v1/users/${userId}/playlists/${playlistId}/tracks`,
-      {
-        headers: new Headers({
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${access_token}`
-        })
-      }
-    ).map(R.propOr([], "items"));
+  getTracks({ userId, playlistId }) {
+    return fetchSpotify({
+      url: `/users/${userId}/playlists/${playlistId}/tracks`
+    }).map(R.propOr([], "items"));
   }
 
   // Max. 100, we want to expand it recursivly to hold all tracks.
-  getAudioFeaturesOfTracks({ ids, access_token }) {
-    const url = new URL("https://api.spotify.com/v1/audio-features");
-
-    url.searchParams.append("ids", ids);
-
-    return fetch(url, {
-      headers: new Headers({
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${access_token}`
-      })
+  getAudioFeaturesOfTracks({ ids }) {
+    return fetchSpotify({
+      url: "/audio-features",
+      params: {
+        ids
+      }
     }).map(R.propOr([], "audio_features"));
   }
 
   // Max. 50, we want to expand it recursivly to hold all artists.
-  getArtists({ ids, access_token }) {
-    const url = new URL("https://api.spotify.com/v1/artists");
-
-    url.searchParams.append("ids", ids);
-
-    return fetch(url, {
-      headers: new Headers({
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${access_token}`
-      })
+  getArtists({ ids }) {
+    return fetchSpotify({
+      url: "/artists",
+      params: {
+        ids
+      }
     }).map(R.propOr([], "artists"));
   }
 
@@ -85,6 +72,9 @@ class App extends Component {
             render={({ location, ...props }) => {
               const params = queryString.parse(location.hash);
               const { access_token } = params;
+
+              setAuthorization(access_token);
+
               // Andhim
               // const artistId = "6XJeFzmI6vrWyHcdB7EImP";
               // Andhim?
@@ -92,7 +82,7 @@ class App extends Component {
               // andhim's weekly favorites
               const playlistId = "1oFPILLPGdeMXdpSTik5U5";
 
-              this.getTracks({ userId, playlistId, access_token })
+              this.getTracks({ userId, playlistId })
                 .chain(tracks => {
                   const ids = R.map(R.path(["track", "id"]), tracks);
 
@@ -109,8 +99,7 @@ class App extends Component {
                   const artistsIds = R.map(R.propOr([], "id"), artistsOfTracks);
 
                   this.getArtists({
-                    ids: R.slice(0, 50, artistsIds),
-                    access_token
+                    ids: R.slice(0, 50, artistsIds).join(",")
                   }).fork(
                     err => console.error(err),
                     response => {
@@ -123,8 +112,7 @@ class App extends Component {
                   );
 
                   return this.getAudioFeaturesOfTracks({
-                    ids,
-                    access_token
+                    ids: ids.join(",")
                   }).map(features => {
                     return R.zipWith(
                       R.merge,
